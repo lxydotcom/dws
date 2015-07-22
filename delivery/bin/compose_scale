@@ -1,0 +1,19 @@
+#! /bin/bash
+#
+# DevTest REST API Automation Testing
+#
+# Author        Leeon Li <leeon.li@ca.com>, Le Yuan <le.yuan@ca.com>
+# Version       1.0
+#
+# Set Environment Variables & Load functions
+
+cd `dirname $0`
+. ./env
+
+[ $# -ne 2 ] && echo "Usage $0 PROJECT_NAME NUM" && exit 1
+PROJECT_NAME=${1}
+SCALE_NUM=${2}
+COMPOSE_FILE=${PROJECT_NAME}-docker-compose.yml
+
+export DOCKER_HOST=${SWARM_HOST}
+${TOOL_LOC}/docker-compose -p ${PROJECT_NAME} -f ${COMPOSE_FILE} scale ${SERVICE_NAME}=${SCALE_NUM}

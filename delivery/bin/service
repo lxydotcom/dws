@@ -1,0 +1,35 @@
+#! /bin/bash
+
+cd `dirname $0`
+
+# import lib functions
+. ./lib
+
+# set task variable
+export TASK=$1
+
+# setup common env
+projects_path="../artifacts/projects"
+
+. ${projects_path}/setup_image_env.sh
+
+# setup project env
+product_name=$2
+product_version=$3
+branch=$4
+
+setup_image_project_env ${product_name} ${product_version} ${branch}
+
+
+case ${TASK} in
+	BUILD)
+		service_build 2>&1 | tee -a "${BUILD_LOG_PATH}"
+		;;
+	IMAGE)
+		service_deliver_image 2>&1 | tee -a "${IMAGE_LOG_PATH}"
+		;;
+	*)
+		echo "Usage: $0 BUILD | IMAGE"
+		exit 1
+		;;
+esac

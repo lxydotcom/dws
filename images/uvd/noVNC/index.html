@@ -1,0 +1,21 @@
+<!DOCTYPE HTML>
+<html lang="en-US">
+    <head>
+        <meta charset="UTF-8">
+        <meta http-equiv="refresh" content="1;url=vnc.html?autoconnect=1&host=localhost&port=6080">
+        <script type="text/javascript">
+            var port = window.location.port;
+            if (!port)
+                port = window.location.protocol[4] == 's' ? 443 : 80;
+            var host = window.location.hostname;
+            if (!host)
+                host = 'localhost'
+            window.location.href = "vnc.html?autoconnect=1&host=" + host + "&port=" + port;
+        </script>
+        <title>Page Redirection</title>
+    </head>
+    <body>
+        <!-- Note: don't tell people to `click` the link, just tell them that it is a link. -->
+        If you are not redirected automatically, follow the <a href='http://example.com'>link to example</a>
+    </body>
+</html>

@@ -1,0 +1,92 @@
+{% extends "base_templates/page_base.html" %}  {# base_templates/page_base.html extends base_templates/base.html #}
+
+{% block main %}
+
+<!-- Specific style for admin UI -->
+<style type="text/css">
+  a:link {color: red}
+  a:visited {color: red}
+</style>
+
+<link href="//cdnjs.cloudflare.com/ajax/libs/x-editable/1.5.0/bootstrap3-editable/css/bootstrap-editable.css" rel="stylesheet"/>
+<script src="//cdnjs.cloudflare.com/ajax/libs/x-editable/1.5.0/bootstrap3-editable/js/bootstrap-editable.min.js"></script>
+
+<h1>Admin Management</h1>
+
+<hr class="no-margins"/>
+
+<h3>Admin - Environment Update</h3>
+<a href='{{ url_for('admin_update_environment') }}'>Update All Environments</a>
+
+<br/><br/>
+<hr class="no-margins"/>
+
+<h3>Admin - Environment List</h3>
+<table class="table table-hover table-bordered table-condensed">
+  <tr class="vcenter active">
+	  {% for display_name in environment_display_names %}
+	    <th>{{display_name}}</th>
+	  {% endfor %}
+    <th>User</th>
+    <th>Operation</th>
+  </tr>
+  <tr class="vcenter active">
+    <form method="POST" action="{{ url_for('admin') }}">
+      {% for id in environment_ids %}
+        <td>
+          {% if id == 'status' %}
+            {{ form.status(class = "form-control") }}
+          {% endif %}
+        </td>
+      {% endfor %}
+      <td><!-- placehold for user --></td>
+      <td><input type='submit' value='Refresh' class="btn btn-default"></td>
+    </form>
+  </tr>
+  {% if environment_list %}
+    {% for environment_record in environment_list %}
+      {% set status = environment_record.status.get_value() %}
+      {% if status == 'failed' %}
+        {% set class = 'danger' %}
+      {% elif status == 'starting' %}
+        {% set class = 'info' %}
+      {% endif %}
+
+      <tr class="{{ class }}">
+	    {% for id in environment_ids %}
+        <td>
+          {{ environment_record[id].render() | safe }}
+        </td>
+	    {% endfor %}
+      <td>{{ environment_record.user }}</td>
+      <td>
+        {% if status == 'running' %}
+          <a href='{{ url_for('stop_environment') }}?redirect=admin&{{ environment_record.query_string }}'>Stop</a>
+        {% elif status in ('stopped', 'failed') %}
+          <a href='{{ url_for('remove_environment') }}?redirect=admin&{{ environment_record.query_string }}'>Remove</a>
+        {% elif status == 'starting' and (not environment_record.environment_id.get_value()) %}
+          {% set warning = "BE CAREFUL! Admin specific operation, re-start the env if it not exist.\\n\\nIt would bring up several tasks to create the same env and only the last one is tracked, others will not be tracked." %}
+          {% set warning2 = "The previous env would not be tracked anyway.\\n\\nAre you really decide to continue?" %}
+          <a onclick='javascript:if (confirm("{{ warning }}")) return confirm("{{ warning2 }}"); else return false;' href='{{ url_for('admin_restart_environment') }}?{{ environment_record.query_string }}'>Re-start</a>
+        {% elif status == 'stopping' and environment_record.environment_id.get_value() %}
+          {% set warning = "BE CAREFUL! Admin specific operation, re-stop the env if it exists.\\n\\nIt would bring up several tasks to stop the same env. the env would be stopped if one of them succeeds" %}
+          <a onclick='javascript:return confirm("{{ warning }}");' href='{{ url_for('admin_restop_environment') }}?{{ environment_record.query_string }}'>Re-stop</a>
+        {% elif status == 'removing' %}
+          {% set warning = "BE CAREFUL! Admin specific operation, re-remove the env.\\n\\nIt would bring up several tasks to remove the same env. the env would be removed if one of them succeeds" %}
+          <a onclick='javascript:return confirm("{{ warning }}");' href='{{ url_for('admin_reremove_environment') }}?{{ environment_record.query_string }}'>Re-remove</a>
+        {% endif %}
+      </td>
+	  </tr>
+    {% endfor %}
+  {% endif %}
+</table>
+<script>
+  $(document).ready(function() {
+    $('.environment_name').editable();
+  });
+
+  $(document).ready(function() {
+    $('[data-toggle="tooltip"]').tooltip();
+  });
+</script>
+{% endblock %}

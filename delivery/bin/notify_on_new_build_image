@@ -1,0 +1,46 @@
+#!/bin/bash
+
+product_name=${PRODUCT_NAME}
+product_version=${PRODUCT_VERSION}
+branch=${BRANCH}
+
+build_num=${BUILD_NUM}
+
+server_type=${SERVER_TYPE}
+db_type=${DB_TYPE}
+
+provisioning_url="http://dockerhost.ca.com:5555"
+notify_url="http://dockerhost.ca.com:5555/utils/notify_all_users"
+
+subject="New Build Image Is Coming, build: ${product_name} v${product_version} ${branch} ${build_num} ${server_type} ${db_type}"
+body="
+<html>
+<body>
+<p>Dear User,</p>
+
+<pre>
+A new build image is coming
+  Product Name:     ${product_name}
+  Product Version:  v${product_version}
+  Branch:           ${branch}
+  Build Number:     ${build_num}
+  Server Type:      ${server_type}
+  DB Type:          ${db_type}
+
+Docker Provisioning System are now supplying this build image for you:
+  ${provisioning_url}
+</pre>
+
+<br/>
+<p>
+Sincerely,<br/>
+Docker Provisioning System 
+</p>
+</body>
+</html>
+"
+
+# send email via REST API within provisioning system
+curl --fail --silent --show-error --data "subject=${subject}&body=${body}" ${notify_url}
+echo ""
+return $?

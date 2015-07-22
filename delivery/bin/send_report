@@ -1,0 +1,24 @@
+#! /bin/bash
+#
+# DevTest REST API Automation Testing
+#
+# Author        Leeon Li <leeon.li@ca.com>, Le Yuan <le.yuan@ca.com>
+# Version       1.0
+
+# Set Environment Variables & Load functions
+cd `dirname $0`
+. ./env
+. ./lib
+
+# Set BUILD_NUM First
+set_build_num ${1}
+project_name=${2}
+[ -z ${project_name} ] && echo "Usage: $0 BUILD_NUM PROJECT_NAME" && exit 1
+
+# The Main Entry
+report_dir=${REPORT_LOC}/${BUILD_NUM}/${project_name}
+merged_report=${report_dir}/All.txt
+mail_subject="Docker Test ${project_name} Report (Build ${BUILD_NUM})"
+
+parse_reports ${report_dir} ${merged_report} || exit 1
+send_mail "${MAIL_TO}" "${mail_subject}" "`cat ${merged_report}`" || exit 1

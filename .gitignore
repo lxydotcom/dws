@@ -1,0 +1,3 @@
+storage/
+registry/docker-compose.yml
+delivery/artifacts/projects/*/*/*/builds/

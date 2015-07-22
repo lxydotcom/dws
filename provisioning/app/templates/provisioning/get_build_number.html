@@ -1,0 +1,45 @@
+{% extends "base_templates/page_base.html" %}  {# base_templates/page_base.html extends base_templates/base.html #}
+
+{% block main %}
+<h1>Start Environment</h1>
+<table class="table table-hover table-bordered table-condensed">
+  <tr class="vcenter active">
+    <th>Product Name</th>
+    <th>Product Version</th>
+    <th>Branch</th>
+    <th>Server Type</th>
+    <th>DB Type</th>
+    <th>Build Numbers</th>
+    <th>Environment Name</th>
+    <th>Operation</th>
+  </tr>
+{% for build in builds %}
+  <tr class="vcenter">
+    <form method="POST" action="{{ url_for('start_environment') }}">
+      <td>{{ build['product_name'] }}</td>
+      <td>{{ build['product_version'] }}</td>
+      <td>{{ build['branch'] }}</td>
+      <td>{{ build['server_type'] }}</td>
+      <td>{{ build['db_type'] }}</td>
+      {% if 'build_number_form' in build %}
+        {% set form = build['build_number_form'] %}
+        <td>{{ form.build_number(class = "form-control") }}</td>
+        <td>{{ form.environment_name(size = 30, maxlength = 255, class="form-control", placeholder = 'Type name/label here..') }}</td>
+        <td>
+          {{ form.product_name() }}
+          {{ form.product_version() }}
+          {{ form.branch() }}
+          {{ form.server_type() }}
+          {{ form.db_type() }}
+          <input type='submit' value='Start' class="btn btn-default">
+        </td>
+      {% else %}
+        <td></td>
+        <td></td>
+        <td></td>
+      {% endif %}
+    </form>
+  </tr>
+{% endfor %}
+</table>
+{% endblock %}

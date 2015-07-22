@@ -1,0 +1,424 @@
+login into vshpere
+create a VM, do following things basing on it
+install ubuntu
+  username: docker
+  password: interOP@123
+
+Docker Test:
+https://github-isl-01.ca.com/yuale01/DockerTest
+
+vCenter: tuvbo01-vc
+IP:        155.35.104.15/16
+User: root
+Pass: #cut2dl#
+
+
+install Ubuntu 14.04 LTS
+
+intall vmware tools for ubuntu
+http://kb.vmware.com/kb/1022525
+
+install docker:
+wget -qO- https://get.docker.com/ | sh
+add following option to docker configuration file 
+sudo vi /etc/default/docker:
+  DOCKER_OPTS="--insecure-registry <registry_hostname>:5000 -H tcp://0.0.0.0:2374 -H unix:///var/run/docker.sock"
+sudo service docker restart
+
+docker build --rm -t localhost:5000/lijla02/ubuntu-desktop-lxde-vnc BaseImage
+docker push localhost:5000/lijla02/ubuntu-desktop-lxde-vnc
+
+
+install docker-compose (firstly install Docker 1.3 or greater)
+sudo wget https://github.com/docker/compose/releases/download/1.2.0/docker-compose-`uname  -s`-`uname -m` -O /usr/local/bin/docker-compose
+sudo chmod a+x /usr/local/bin/docker-compose
+
+
+echo interOP@123 | sudo -S mount -t cifs -o username=lijla02,password=sign7L\>EE,rw,gid=1000,uid=1000,dir_mode=0777,file_mode=0777,nobrl //lijla02-opt9020/DockerTest2 ./DockerTest2
+
+When issue: 
+  mount error(121): Remote I/O error
+  Refer to the mount.cifs(8) manual page (e.g. man mount.cifs)
+See solution:
+https://boinst.wordpress.com/2012/03/20/mount-cifs-cannot-allocate-memory-mounting-windows-share/
+
+
+mkdir /mnt/Share
+ln -s ~/DockerTest2/Share /mnt/Share
+
+Registry:
+./setup.sh
+
+
+*/10 * * * * /home/docker/DockerTest2/Share/bin/service BUILD ra 552 main > /dev/null 2>&1
+*/10 * * * * /home/docker/DockerTest2/Share/bin/service IMAGE ra 552 main > /dev/null 2>&1
+
+
+build mysql base image
+docker build --rm -t localhost:5000/lijla02/mysql:5.6 BaseImage/mysql/5.6
+docker run --name mysql -d -p 3306:3306 -e MYSQL_ROOT_PASSWORD=interOP@123 localhost:5000/lijla02/mysql:5.6
+docker push localhost:5000/lijla02/mysql:5.6
+
+
+run ra product
+docker run --name ra -p 18080:8080 -it --link mysql:db -v /home/docker/port.sh:/port.sh localhost:5000/ca/ra_v552:148 /bin/bash
+
+check web page ready:
+curl -LIfsS -o /dev/null -m 300 http://localhost:18080
+
+Change apache2 configuration
+  sudo vi /etc/apache2/envvars
+    export APACHE_RUN_USER=docker
+    export APACHE_RUN_GROUP=docker
+  sudo vi apache2.conf
+    Timeout=1200
+
+Enable docker site
+sudo ln -s /home/docker/DockerTest2/Share/site/conf/docker.conf /etc/apache2/sites--available/
+sudo a2dissite 000-default.conf
+sudo a2ensite docker.conf
+sudo /etc/init.d/apache2 restart
+
+ubuntu vnc default config to dockerhost.ca.com as hostname
+
+
+Swarm
+install VM
+put boot2docker.iso to VM as boot disk
+
+ssh to VM
+ssh <host-ip> with user/pasword: docker/tcuser
+
+set hostname to VM
+sudo hostname <hostname> && echo "<hostname>" | sudo tee /var/lib/boot2docker/etc/hostname
+
+update DNS with hostname:
+sudo vi /var/lib/boot2docker/bootsync.sh
+******************************
+##################
+# register the dns entry with current hostname
+##################
+. /etc/init.d/tc-functions
+
+# kill the dhcp client, then start it again
+pkill dhcp.sh
+pkill udhcpc
+
+NETDEVICES="$(awk -F: '/eth.:|tr.:/{print $1}' /proc/net/dev 2>/dev/null)"
+for DEVICE in $NETDEVICES; do
+  # start dhcp client synchronizely to ensure getting the IP address
+  echo -e "\n${GREEN}Network device ${MAGENTA}$DEVICE${GREEN} detected, DHCP broadcasting for IP with hostname.${NORMAL}"
+  trap 2 3 11
+  /sbin/udhcpc -i $DEVICE -x hostname:$(/bin/hostname) -p /var/run/udhcpc.$DEVICE.pid >/dev/null 2>&1
+  trap "" 2 3 11
+done
+******************************
+sudo chmod +x /var/lib/boot2docker/bootsync.sh
+
+disable TLS for Docker:
+sudo vi /var/lib/boot2docker/profile
+export DOCKER_TLS="no"
+export EXTRA_ARGS="--insecure-registry <registry_host>:5000"
+
+vmtoolsd messages spaw every 30s, to suppress it, you can kill vmtoolsd process, or run syslogd to redirect messages to syslog
+
+create swarm cluster id
+docker run --rm swarm create
+50c3f3a28738572c10dd6a9046ee8946
+
+swarm join cluster
+docker run -d --name swarm_join swarm join --addr=<node_ip>:<port> token://50c3f3a28738572c10dd6a9046ee8946
+
+swarm manage:
+docker run -d --name swarm_manage -p 2375:2375 swarm manage -H 0.0.0.0:2375 token://50c3f3a28738572c10dd6a9046ee8946
+or
+docker run -d --name swarm_manage -p 2375:2375 swarm manage -H 0.0.0.0:2375 nodes://<node_ip>:<port>,<node_ip>:<port>
+
+
+===============================================
+Steps:
+
+Startup 2 Docker containers using a base image
+Install MySql and Oracle in 2 new containers
+Commit 2 containers as images to Docker Hub, these 2 containers will be hold for ever
+
+Get the latest build number of product from TeamCity
+Download the lastest build
+Share the directory of builds to Docker container
+Startup 2 Docker containers using a base image (Ubuntu, VNC)
+Install the product in a container
+Configure the product in container, create the DB tables
+Install a Agent in a new container
+Configure the Agent in container
+Commit 2 containers as images to Docker Hub
+
+User installs VirtualBox 4.20 or above
+User starts up a Linux VM on Windows platform
+User pulls a DB image from Docker Hub
+User starts up the Docker container based on DB image
+User configure hosts to add a host name for this DB container
+User pulls a RA and Agent image from Docker Hub
+User starts up the RA and Agent containers, RA has configured with fix DB connection string
+
+Those old images for RA, Agent will be cleaned from Docker Hub by an interval timer
+
+=======================================
+3 http interfaces to communicate
+
+-Get build number after last build
+  product name          : Product name for example ra, rp, puppet
+  product version       : Product version, for example 552 means version 5.5.2
+  branch                : The Git branch of the product, for example main, puppet
+  server type           : Server type for this build, for example allinone, agent
+  db type               : DB type for this build, for example mysql, oracle
+  last build number     : The last build number, commonly it's the last number your test suits is aware of
+  --------
+  result                : The result of request, none, successful or failed
+  error                 : The error message if failed
+  later build numbers   : The later build numbers separated by comma, which happen after the specified last build number
+  latest build number   : The lastest build number which happen after the specified last build number
+
+Request:
+  http://dockerhost.ca.com/docker/cgi-bin/get_build_number.py?product_name=ra&product_version=552&branch=main&server_type=allinone&db_type=mysql&last_build_number=145
+Response:
+  result=successful
+  later_build_number=146,147,148
+  latest_build_number=148
+
+If the result=none, it means there is no later/latest build number after your specified last build number.
+  result=none
+If the response status code is 500 (Internal Server Error), it means it failed to get the later/latest number and the response may include the error message.
+  result=failed
+  error=Can't get the later/latest build number due to error
+  <followed by other debug information that is not form of key=value>
+
+
+-Start work environment
+  product name          : Product name for example ra, rp, puppet
+  product version       : Product version, for example 552 means version 5.5.2
+  branch                : The Git branch of the product, for example main, puppet
+  build number          : The build number you want to start
+  server type           : The server type, for example allinone, agent
+  server pin            : The sever pin name, you can specify a pin name that will use specified server image, failed if it doesn't exist
+  db type               : DB type, for example mysql, oracle
+  db pin                : DB pin name, you can specify a pin name that will use specified db image, failed if it doesn't exist
+  -----------
+  result                : The result of request, successful or failed
+  error                 : The error message if failed
+  environment id        : Current working environment identity, a string
+  hostname              : The hostname of server
+  http port             : The HTTP port that you can access
+  https port            : The HTTPS port that you can access
+  vnc_port              : VNC port by which you can access the remote server
+  db port               : DB port that you can access
+
+Request:
+  http://dockerhost.ca.com/docker/cgi-bin/start_environment.py?product_name=ra&product_version=552&branch=main&build_number=148&server_type=allinone&server_pin=myserver&db_type=mysql&db_pin=mydb
+Response:
+  result=successful
+  environment_id=foobar
+  hostname=dockerhost.ca.com
+  http_port=18080
+  https_port=18443
+  vnc_port=16080
+  db_port=13306
+
+If the response status code is 500 (Internal Server Error), it means it failed to start the env and the response may include the error message.
+  result=failed
+  error=The docker image 148 is not started due to it not exist
+  <followed by other debug information that is not form of key=value>
+
+-Stop work environment
+  environment id        : The working environment identity you want to stop, a string
+  server pin            : The current server has log and other generated artifacts in this environment, give a pin name to save the current server image. Overrides if pin already exists
+  db pin                : The current DB has cumulative data populated in this environment, give a pin name to save the current DB image. Overrides if pin already exists
+  ---------
+  result                : The result of request, none, successful or failed
+  error                 : The error message if failed
+  <followed by other debug information that is not form of key=value>
+
+
+Request:
+  http://dockerhost.ca.com/docker/cgi-bin/stop_environment.py?environment_id=foobar
+Response:
+  result=successful
+
+If the result=none, it means the environment already stopped
+  result=none
+
+If the response status code is 500 (Internal Server Error), it means it failed to stop the env and the response may include the error message.
+  result=failed
+  error=The docker image 148 is not stopped due to error
+  <followed by other debug information that is not form of key=value>
+
+
+==========================
+
+get funcamental db image
+populate db
+end
+
+get fundamental db image
+populate db
+push cumulative db image
+
+get cumulative db image
+populate db
+end
+
+get cumulative db image
+populate db
+push cumulative again db image
+
+======================
+Test deploy system:
+docker run -d --name mydb -e MYSQL_ROOT_PASSWORD=interOP@123 localhost:5000/lijla02/mysql:5.6
+docker run --name myra --link mydb:db -p 8080 -v /home/docker/DockerTest2/Share2:/mnt/host -it localhost:5000/lijla02/ubuntu-desktop-lxde-vnc /bin/bash
+
+
+=============================
+Working System
+start mysql
+docker run -d --name workdb -p 3306:3306 -e MYSQL_ROOT_PASSWORD=interOP@123 localhost:5000/lijla02/mysql:5.6
+start server
+docker run -it --name workserver -p 5555:5555 -p 6080:6080 -v /:/mnt/dockerhost --link workdb:workdb -e DOCKER_HOST_HOSTNAME=`hostname` -e DOCKER_DAEMON_PORT=2375 localhost:5000/lijla02/ubuntu-desktop-lxde-vnc /bin/bash
+
+create database for mysql
+docker exec workdb mysql --user=root --password=interOP@123 -e "create database if not exists provisioning default character set utf8 default collate utf8_general_ci;"
+
+link to docker host directory to dev app
+ln -s /mnt/dockerhost/home/docker/DockerTest2/work_system ./work_system
+
+update apt
+apt-get -qq update
+
+install wget and docker
+apt-get install wget
+wget -qO- https://get.docker.com/ | sh
+
+install mail utils
+apt-get install mailutils
+configure postfix in /etc/postfix/main.cf
+myhostname = localhost
+mydestination = localhost.localdomain, , localhost
+inet_interfaces = localhost
+
+start postfix
+service postfix start
+
+install pip
+apt-get install python-pip
+
+install fabric
+apt-get install python-dev
+apt-get install libpq-dev
+pip install fabric
+
+install python-mysqldb
+apt-get install python-mysqldb
+
+clone Flask-User-starter-app
+mkdir dev
+git clone https://github.com/lingthio/Flask-User-starter-app.git my_app
+cd ~/dev/my_app
+
+modify code and config
+runserver.py
+settings.py
+base.html
+
+fab update_env
+fab reset_db
+fab runserver
+fab rungunicorn
+
+install redis-server
+apt-get install -y redis-server
+
+startup redis-server
+service redis-server start
+
+check redis server running
+redis-cli ping
+
+install celery
+pip install -U celery[redis]
+
+startup celery server (as default, fork processes according to number of cpu cores)
+export C_FORCE_ROOT=true
+celery -A runserver.celery worker --concurrency 4 -l DEBUG
+
+inspect celery tasks
+celery -A runserver.celery inspect active
+
+
+==================
+Requirements:
+
+* Docker swarm cluster
+Completed
+
+* Send mail to users when new build comes up
+Completed
+
+* There are clickable urls on port column in UI
+Completed
+
+* Admin management, admin can see all users' work environments, and can stop them arbitrarily
+Completed
+
+* Admin can forcely update the mapping ports, in case of containers are restarted
+Completed
+
+* Filter the result by status. The port is not clickable if stopped
+Completed
+
+* Async stop env task
+Completed
+
+* User/Admin can remove the env's that's not running
+Completed
+
+* Admin can re-start, re-stop and re-remove env's that's interupted due to unknown reason
+Completed
+
+
+* Get builds list rather than latest build that are available
+Completed
+
+* Transfer files between remote and local, expose SSH port
+Completed
+
+* Naming the environment
+Completed
+
+* Optimize Docker Host and Node machine, reduce the overhead of cpu, memory and disk
+Completed
+
+* UI optimized, using bootstrap to decorate UI
+Completed
+
+* Support RA v5.5.3 in additional v5.5.2
+Completed
+
+* Containerize Docker Work System, all sub-systems and components are containerized
+Work in Progress, 50% completed
+
+* Automatically install Docker Work System
+Work in Progress, 50% completed
+
+
+* Refresh env list page automatically in UI
+Not started
+
+* Clean the timeout Docker containers automatically
+Not started
+
+* Admin can send customized email to all users in UI
+Not started
+
+
+
+==========================
+supervisor command bash -c to invoke sh script, why celery not need
+swarm auto update nodes within registry table

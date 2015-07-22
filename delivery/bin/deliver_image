@@ -1,0 +1,80 @@
+#!/bin/bash
+
+clean_all() {
+  echo "Cleaning all ..."
+  
+  check_container ${server_deploying_container} ${SERVER_BASE_IMAGE} && remove_container ${server_deploying_container}
+  check_image ${server_deployed_img} && remove_image ${server_deployed_img}
+  check_image ${server_deployed_img_with_remote_tag} && remove_image ${server_deployed_img_with_remote_tag}
+
+  if [ "${withDb}" = "yes" ]; then
+    check_container ${db_deploying_container} ${DB_BASE_IMAGE} && remove_container ${db_deploying_container}
+    check_image ${db_deployed_img} && remove_image ${db_deployed_img}
+    check_image ${db_deployed_img_with_remote_tag} && remove_image ${db_deployed_img_with_remote_tag}
+  fi
+}
+
+
+build_num=${1}
+withDb=${2}
+
+server_deploying_container=`get_server_deploying_container_name ${build_num}`
+server_deployed_img=`get_server_deployed_image_name ${build_num}`
+server_deployed_img_with_remote_tag=`get_server_deployed_image_name_with_remote_tag ${build_num}`
+
+if [ "${withDb}" = "yes" ]; then
+  db_deploying_container=`get_db_deploying_container_name ${build_num}`
+  db_deployed_img=`get_db_deployed_image_name ${build_num}`
+  db_deployed_img_with_remote_tag=`get_db_deployed_image_name_with_remote_tag ${build_num}`
+fi
+
+# check server and db deployd images to see if they already exist
+check_image ${server_deployed_img} && echo "Image [${server_deployed_img}] already exist, do nothing." && return 0
+check_image ${server_deployed_img_with_remote_tag} && echo "Image [${server_deployed_img_with_remote_tag}] already exists, do nothing." && return 0
+if [ "${withDb}" = "yes" ]; then
+  check_image ${db_deployed_img} && echo "Image [${db_deployed_img}] already exist, do nothing." && return 0
+  check_image ${db_deployed_img_with_remote_tag} && echo "Image [${db_deployed_img_with_remote_tag}] already exists, do nothing." && return 0
+fi
+
+# check server and db deploying container to clean they
+check_container ${server_deploying_container} ${SERVER_BASE_IMAGE} && remove_container ${server_deploying_container}
+if [ "${withDb}" = "yes" ]; then
+  check_container ${db_deploying_container} ${DB_BASE_IMAGE} && remove_container ${db_deploying_container}
+fi
+
+# create server and db deployed image
+# 1. run the db base image, check db service ready
+# 2. run server base image depending on db container
+# 3. run the deploy script of server inside the deploying server container.
+if [ "${withDb}" = "yes" ]; then
+  create_db_container ${db_deploying_container} ${DB_PORT} "${DB_RUNNING_ENV}" ${DB_BASE_IMAGE} ${DB_BASE_IMAGE_TAG} || { clean_all && return 1 || return 1; }
+  # post starting db
+  func_post_start_db ${db_deploying_container} || { clean_all && return 1 || return 1; }
+fi
+_server_start_cmd="${DEPLOY_SERVER_CMD_IN_CONTAINER} ${PRODUCT_NAME} ${PRODUCT_VERSION} ${BRANCH} ${SERVER_TYPE} ${DB_TYPE} ${build_num}"
+create_server_container ${server_deploying_container} "${db_deploying_container}" "${HOST_PATH}" "${HOST_PATH_IN_CONTAINER}" ${SERVER_BASE_IMAGE} "${_server_start_cmd}" || { clean_all && return 1 || return 1; }
+
+# 4. server container will stop automatically once it completes installation
+# nothing to do to stop server container
+
+# 5. commit server image from container
+# 6. push server image to registry
+check_container ${server_deploying_container} ${SERVER_BASE_IMAGE} && create_image ${server_deploying_container} ${server_deployed_img} || { clean_all && return 1 || return 1; }
+check_image ${server_deployed_img} && tag_image ${server_deployed_img} ${server_deployed_img_with_remote_tag} && push_image ${server_deployed_img_with_remote_tag} || { clean_all && return 1 || return 1; }
+
+# 7. stop db container
+# 8. commit db image from container
+# 9. push db image to registry
+if [ "${withDb}" = "yes" ]; then
+  # pre stopping db
+  func_pre_stop_db ${db_deploying_container} || { clean_all && return 1 || return 1; }
+  check_container ${db_deploying_container} ${DB_BASE_IMAGE} && stop_container ${db_deploying_container} || { clean_all && return 1 || return 1; }
+  check_container ${db_deploying_container} ${DB_BASE_IMAGE} && create_image ${db_deploying_container} ${db_deployed_img} || { clean_all && return 1 || return 1; }
+  check_image ${db_deployed_img} && tag_image ${db_deployed_img} ${db_deployed_img_with_remote_tag} && push_image ${db_deployed_img_with_remote_tag} || { clean_all && return 1 || return 1; }
+fi
+
+
+# remove contianer & image & tag locally
+clean_all
+
+echo "[Done] Delivered image with build: ${build_num}"

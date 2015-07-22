@@ -1,0 +1,45 @@
+#!/bin/bash
+#
+# DevTest REST API Automation Testing
+#
+# Author        Leeon Li <leeon.li@ca.com>
+# Version       1.0
+
+# Set BUILD_NUM, CONTAINER_Q First
+if [ $# -eq 2 ]; then
+	export BUILD_NUM=${1}
+	export PROJECT_NAME=${2}
+else
+	echo "Usage: $0 BUILD_NUM, PROJECT_NAME"
+	exit 1
+fi
+
+# Set Environment Variables & Load functions
+cd `dirname $0`
+. ./env
+. ./lib
+
+[ -d "${REPORT_LOC}/${BUILD_NUM}/${PROJECT_NAME}" ] || mkdir -p -m 777 "${REPORT_LOC}/${BUILD_NUM}/${PROJECT_NAME}"
+rm -f ${REPORT_LOC}/${BUILD_NUM}/${PROJECT_NAME}/*.log
+
+container_q=${QUEUE_LOC}/.${PROJECT_NAME}/q_`hostname`
+
+touch ${container_q} && chmod 666 ${container_q}
+
+while export TEST_SUITE=$(pop_suite ${container_q})
+do
+    [ -z "${TEST_SUITE}" ] && echo "Waiting Job..." && sleep 1 && continue
+
+    if [ "${JOB_EOF}" = "${TEST_SUITE}" ]; then
+         echo "All Jobs Finished"
+         rm -f ${container_q}
+         cp_runtime_log ${LISA_LOG_HOME} ${REPORT_LOC}/${BUILD_NUM}/${HOSTNAME}_${PROJECT_NAME}_debug
+         exit 0
+    fi
+
+    my_log=${REPORT_LOC}/${BUILD_NUM}/${PROJECT_NAME}/`basename ${TEST_SUITE} .ste`.log
+
+    # The Main Entry
+    echo "Running suite: ${TEST_SUITE}"
+    ./run ${TEST_SUITE} > ${my_log} 2>&1
+done

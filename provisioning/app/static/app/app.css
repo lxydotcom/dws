@@ -1,0 +1,32 @@
+/**** element styles ****/
+hr { border-color: #cccccc; margin: 0px; }
+
+/**** header, main and footer divs ****/
+.header-title { font-size: 30px; }
+
+/**** class-based style modifiers ****/
+
+.no-margins { margin: 0px; }
+
+.with-margins { margin: 10px; }
+
+.col-centered { float: none; margin: 0 auto; }
+
+.table tr.vcenter td {
+   vertical-align: middle;
+}
+.table tr>td.vtop {
+   vertical-align: top;
+}
+.table tr.vcenter th {
+   vertical-align: middle;
+}
+.table tr>th.vtop {
+   vertical-align: top;
+}
+
+.tooltip-inner {
+    text-align: left;
+    white-space:pre-wrap;
+    max-width:none;
+}

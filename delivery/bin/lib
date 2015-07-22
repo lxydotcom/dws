@@ -1,0 +1,397 @@
+#!/bin/bash
+
+get_server_deploying_container_name() {
+    local build_num=${1}
+
+    echo "${CONTEXT_ID}_server_deploying_b${build_num}"
+}
+
+get_server_deployed_image_name() {
+    local build_num=${1}
+
+    echo "${PROJECT_ID}/${CONTEXT_ID}_server:${build_num}"
+}
+
+get_server_deployed_image_name_with_remote_tag() {
+    echo "${DOCKER_REG}/`get_server_deployed_image_name $@`"
+}
+
+get_db_deploying_container_name() {
+    local build_num=${1}
+
+    echo "${CONTEXT_ID}_db_deploying_b${build_num}"
+}
+
+get_db_deployed_image_name() {
+    local build_num=${1}
+
+    echo "${PROJECT_ID}/${CONTEXT_ID}_db:${build_num}"
+}
+
+get_db_deployed_image_name_with_remote_tag() {
+    echo "${DOCKER_REG}/`get_db_deployed_image_name $@`"
+}
+
+
+# $1: server container name
+# $2: db container name that will be linked in this server container
+# $3: host volume bound to server container
+# $4: host path in server container
+# $5: server image name
+# $6: startup command run in server container
+create_server_container() {
+    local server_container_name=${1}
+    local db_container_name=${2}
+    local host_path=${3}
+    local host_path_in_container=${4}
+    local server_image_name=${5}
+    local cmd_in_container=${6}
+
+    local link=""
+    if [ -n "${db_container_name}" ]; then
+      local link="--link ${db_container_name}:db"
+    fi
+    docker run -t --name ${server_container_name} ${link} -v ${host_path}:${host_path_in_container} -h myhost ${server_image_name} ${cmd_in_container} && echo "[Done] Create new server base container: ${server_container_name}"
+}
+
+create_db_container() {
+    local container_name=${1}
+    local db_port=${2}
+    local db_running_env=${3}
+    local image_name=${4}
+    local image_tag=${5}
+
+    docker run -d --name ${container_name} -p ${db_port} -e ${db_running_env} -h mydb ${image_name}:${image_tag} && echo "[Done] Create new DB base container: ${container_name}"
+}
+
+# Params: CONTAINER_NAME, BASE_IMAGE
+check_container() {
+    docker ps -a | grep ${1} | grep ${2} &> /dev/null
+}
+
+
+# Params: CONTAINER_NAME
+remove_container() {
+    docker stop ${1} &> /dev/null
+    docker rm -f ${1} && echo "[Done] Remove container: ${1}"
+}
+
+stop_container() {
+    docker stop ${1} &> /dev/null
+}
+
+
+# Params: BASE_CONTAINER, TEST_IMG
+create_image() {
+    local author='Adam Lee <lang.li@ca.com>'
+    local message=`date +"%Y-%m-%d %T"`
+    docker commit -a "${author}" -m "${message}" ${1} ${2} && echo "[Done] Create new image: ${2}"
+}
+
+# Params: TEST_IMG
+check_image() {
+    docker inspect ${1} &> /dev/null
+    #img_name=`echo ${1} | cut -d: -f1`
+    #img_tag=`echo ${1} | cut -d: -f2`
+    #docker images ${image_name} | grep ${img_name} | grep ${img_tag} &> /dev/null
+}
+
+
+# Params: TEST_IMG
+remove_image() {
+    docker rmi ${1} && echo "[Done] Remove image: ${1}"
+}
+
+
+# Params: TEST_IMG, TEST_IMG_TAG
+tag_image() {
+    docker tag -f ${1} ${2} && echo "[Done] Create new image tag: ${2}"
+}
+
+
+# Params: TEST_IMG_TAG
+push_image() {
+    docker push ${1} && echo "[Done] Push new image: ${1}"
+}
+
+
+# Params: SUITE_NAME, HOST_SHARE, MOUNT_POINT, TEST_IMG, PORTAL_PORT, START_COMMAND
+gen_compose_file() {
+    local service_name=${1}
+    local volume_mapping=${2}
+    local test_img=${3}
+    local start_command=${4}
+    cat <<EOF
+${service_name}:
+  mem_limit: 8g
+  image: ${test_img}
+  volumes:
+    - ${volume_mapping}
+  ports:
+    - "1507"
+  command: ${start_command}
+EOF
+}
+
+
+# Params: DOCKER_HOST, PROJECT_NAME, COMPOSE_FILE, SCALE_SERVICE, SCALE_NUMBER
+up_compose() {
+    local docker_host=${1}
+    local project_name=${2}
+    local compose_file=${3}
+    local service_name=${4}
+    local scale_num=${5}
+
+    if [ -e ${compose_file} ]; then
+        export DOCKER_HOST=${docker_host}
+        ${TOOL_LOC}/docker-compose -f ${compose_file} pull --allow-insecure-ssl ${service_name} || { echo "Error pull image"; unset DOCKER_HOST; return 1; }
+        ${TOOL_LOC}/docker-compose -p ${project_name} -f ${compose_file} scale ${service_name}=${scale_num} || { echo "Error scale service"; unset DOCKER_HOST; return 1; }
+        echo "[Done] Run docker-compose."
+        unset DOCKER_HOST
+    else
+        echo "File ${compose_file} not found."
+        return 1
+    fi
+}
+
+
+# Params: MAIL_TO, MAIL_SUBJECT, MAIL_CONTENT
+send_mail() {
+    sendmail ${1} \
+<<EOF
+Content-type:text/html
+Subject:${2}
+
+<pre>
+${3}
+</pre>
+EOF
+    echo "[Done] Send mail to: ${1}"
+}
+
+get_latest_build_num_in_dir() {
+    local builds_download_loc=${BUILDS_DOWNLOAD_LOC}
+
+    # read the build number and find the max
+    local max=0
+    for file in ${builds_download_loc}/*;
+    do
+      local num=-1
+      [ -d "${file}" ] && num=$(basename "${file}")
+      [ "${num}" -gt "${max}" ] && max=${num}
+    done
+    echo "${max}"
+}
+
+# $1: build number you want to download
+download_build() {
+    local build_num=${1}
+
+    local BUILD_NUM=${build_num}
+    local img_name=`eval "echo ${BUILD_NAME_TEMPLATE}"`
+    local build_download_img=${BUILDS_DOWNLOAD_LOC}/${build_num}/${img_name}
+    local builds_loc=${BUILDS_LOC}
+    local build_img=${builds_loc}/${build_num}/${img_name}
+    local tmp_suffix=".downloading"
+    local build_img_tmp=${builds_loc}/${build_num}/${img_name}${tmp_suffix}
+
+    [ -d ${builds_loc}/${build_num} ] || mkdir -p ${builds_loc}/${build_num}
+    if [ -e ${build_img} ]; then
+        echo "Build [${build_num}] has already been downloaded. Do nothing"
+        return 0
+    else
+        echo "Start to get build: ${build_num}"
+        cp ${build_download_img} ${build_img_tmp}
+        if [ 0 -eq $? ]; then
+            mv -f ${build_img_tmp} ${build_img}
+            chmod +x ${build_img}
+            echo "[Done] Downloaded build: ${build_num}"
+            return 0
+        else
+            echo "Error downloading build: ${build_num}"          
+            return 1
+        fi
+    fi
+}
+
+# $1: task name in uppercase
+get_latest_num_in_status() {
+    local task=${1}
+    #STATUS_DB_PATH="/tmp/delivery_status.db"
+    local num=`./status.py "$STATUS_DB_PATH" "get" "$task" "$PRODUCT_NAME" "$PRODUCT_VERSION" "$BRANCH" "$SERVER_TYPE" "$DB_TYPE"`
+    [ $? -ne 0 -o -z "${num}" ] && echo "0" || echo ${num}
+}
+
+# $1: task name in uppercase
+set_latest_num_in_status() {
+    local task=${1}
+    #STATUS_DB_PATH="/tmp/delivery_status.db"
+    ./status.py "$STATUS_DB_PATH" "set" "$task" "$PRODUCT_NAME" "$PRODUCT_VERSION" "$BRANCH" "$SERVER_TYPE" "$DB_TYPE" "$BUILD_NUM"
+    return $?
+}
+
+# $1: build number
+# $2: build number
+compare_build_num() {
+    [ -z ${1} ] && echo "Build Num 1 Empty." && exit 1
+    [ -z ${2} ] && echo "Build Num 2 Empty." && exit 1
+    for i in 1 2 3 4; do
+        local x=`echo ${1}|cut -d'.' -f${i}`
+        local y=`echo ${2}|cut -d'.' -f${i}`
+        [ ${x} -ne ${y} ] && echo `expr ${x} - ${y}` && return
+    done
+    echo 0 && return
+}
+
+service_build() {
+    lock_service ${TASK}
+    local u_num=`get_latest_build_num_in_dir`
+    local i_num=`get_latest_num_in_status ${TASK}`
+    if [ `compare_build_num ${u_num} ${i_num}` -le 0 ]; then
+        echo -e "[${TASK}] Already has build [${i_num}], so skip [${u_num}]. Exit ..."
+    else
+        echo -e "[${TASK}] Build number: [${u_num}]. Start task ..."
+        setup_image_build_number_env ${u_num}
+        download_build ${u_num}                     || { echo "Failed to download build" && return 1; }
+        set_latest_num_in_status ${TASK}            || { echo "Failed to write downloading build status" && return 1; }
+    fi
+    unlock_service ${TASK}
+}
+
+service_deliver_image() {
+    lock_service ${TASK}
+
+    # iterate to handle each server type
+    for server_type in "${ALL_SERVER_TYPES[@]}"
+    do
+        # setup server env as per server type
+        setup_image_server_env "${server_type}"
+
+        if [ -z "${ALL_DB_TYPES}" ]; then
+            # deliver_image without db
+            deliver_image
+        else
+            # iterate to handle each db type
+            for db_type in "${ALL_DB_TYPES[@]}";
+            do
+                # setup db env as per db type
+                setup_image_db_env "${db_type}"
+
+                # deliver_image image by server type and db type
+                deliver_image
+            done
+        fi
+    done
+
+    unlock_service ${TASK}
+}
+
+# deliver_image means build, image, deploy, run
+# image process will invoke deploy process 
+# deploy (occurs in container) means build, install, config and accept UAT(user acceptance test)
+deliver_image() {
+    DELIVER_TASK="${TASK}"
+    CONTEXT_ID=""
+    if [ -n "${SERVER_TYPE}" ]; then
+        DELIVER_TASK="${DELIVER_TASK}.${SERVER_TYPE}"
+        CONTEXT_ID="${SERVER_ID}"
+        if [ -n "${DB_TYPE}" ]; then
+            DELIVER_TASK="${DELIVER_TASK}.${DB_TYPE}"
+            CONTEXT_ID="${DB_ID}"
+        fi
+    fi
+    export DELIVER_TASK
+
+    local u_num=`get_latest_num_in_status BUILD`
+    local i_num=`get_latest_num_in_status ${TASK}`
+    if [ `compare_build_num ${u_num} ${i_num}` -le 0 ]; then
+        echo -e "[${DELIVER_TASK}] Already has image [${i_num}], so skip [${u_num}]. Exit ..."
+        return 2;
+    else
+        echo -e "[${DELIVER_TASK}] Build number: [${u_num}]. Start task ..."
+        setup_image_build_number_env ${u_num}
+        local lib_dir=`get_current_script_location`
+        if [ -z "${DB_TYPE}" ]; then
+            . ${lib_dir}/deliver_image ${u_num} "no"       || { echo "Failed to deliver image without DB" && return 1; }
+        else
+            . ${lib_dir}/deliver_image ${u_num} "yes"      || { echo "Failed to deliver image with DB" && return 1; }
+        fi
+        set_latest_num_in_status ${TASK}                   || { echo "Failed to write deliver status" && return 1; }
+    fi
+
+    # succeed to deliver image, notify users
+    ####################################notifty_on_deliver_image
+}
+
+# notify users on new build image
+notifty_on_deliver_image() {
+    # send emails to users who are care of new build image coming
+    local lib_dir=`get_current_script_location`
+    . ${lib_dir}/notify_on_new_build_image || echo "Failed to notify users on new build image coming"
+}
+
+# $1: task name in uppercase
+lock_service() {
+    local task=${1}
+    local lock_file=${LOCK_TASK_PATH_PREFIX}${task,,}.pid
+
+    if [ -e ${lock_file} ]; then
+        ps -h --pid `cat ${lock_file}` > /dev/null
+        if [ 0 -eq $? ]; then
+            echo "Service ${task} is running, pid is `cat ${lock_file}`."
+            exit 0
+        else
+            echo $$ > ${lock_file}
+        fi
+    else
+        echo $$ > ${lock_file}
+    fi
+}
+
+# $1: task name in uppercase
+unlock_service() {
+    local task=${1}
+    local lock_file=${LOCK_TASK_PATH_PREFIX}${task,,}.pid
+    if [ -e ${lock_file} ]; then
+        rm -f ${lock_file}
+    fi
+}
+
+create_container_on_swarm() {
+    local project_name=${1}
+    local service_name=${2}
+    local volume_mapping=${3}
+    local test_image=${4}
+    local start_command=${5}
+    local scale_num=${6}
+    local docker_host=${7}
+    local compose_file=${8}
+
+    >${compose_file}
+    gen_compose_file ${service_name} ${volume_mapping} ${test_img} "${start_command}" >> ${compose_file}
+    clean_swarm_containers ${docker_host} ${compose_file} ${project_name} ${service_name}
+    up_compose ${docker_host} ${project_name} ${compose_file} ${service_name} ${scale_num} || exit 1
+}
+
+
+# Params LOOP TIME_OUT_COUNT
+check_time_out() {
+    local loop=${1}
+    local time_out_count=${2}
+
+    [ ${time_out_count} -gt 0 ] && [ ${loop} -gt ${time_out_count} ] && echo "Time Out." && exit 1
+}
+
+# Params SWARM_HOST, COMPOSE_FILE, PROJECT_NAME, SERVICE_NAME
+clean_swarm_containers() {
+    local docker_host=${1}
+    local compose_file=${2}
+    local project_name=${3}
+    local service_name=${4}
+    export DOCKER_HOST="${docker_host}"
+    ${TOOL_LOC}/docker-compose -p ${project_name} -f ${compose_file} scale ${service_name}=0
+    # clean images seperately
+    #docker rmi -f ${image_name}
+    echo "[Done] Clean Containers on Swarm"
+    unset DOCKER_HOST
+}

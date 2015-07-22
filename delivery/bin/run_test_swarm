@@ -1,0 +1,36 @@
+#! /bin/bash
+#
+# DevTest REST API Automation Testing
+#
+# Author        Le Yuan <le.yuan@ca.com>
+# Version       1.0
+
+# Set Environment Variables & Load functions
+cd `dirname $0`
+. ./env
+. ./lib
+
+[ $# != 3 ] && echo "Usage $0 BUILD_NUM CONTAINER_NUM PROJECT_NAME" && exit 1
+
+# Set BUILD_NUM First
+set_build_num ${1}
+scale_num=${2}
+project_name=${3}
+
+# The Main Entry
+test_img=`get_image_tag ${BUILD_NUM} ${DOCKER_REG}`
+
+container_q_folder=${QUEUE_LOC}/.${project_name}
+rm -rf ${container_q_folder} && mkdir -p ${container_q_folder}
+container_q_name="${container_q_folder}/q_*"
+
+start_command="${VM_SCRIPT_MAIN_SWARM} ${BUILD_NUM} ${project_name}"
+compose_file="${project_name}-docker-compose.yml"
+
+create_container_on_swarm ${project_name} ${SERVICE_NAME} ${HOST_SHARE}:${MOUNT_POINT} ${test_img} "${start_command}" ${scale_num} ${SWARM_HOST} ${compose_file}
+
+hand_out_suite ${TEST_LOC}/${project_name}/${SUITE_RELATIVE_LOC} "${container_q_name}" ${JOB_EOF} 10 0
+
+clean_swarm_containers ${SWARM_HOST} ${compose_file} ${project_name} ${SERVICE_NAME}
+
+rm -rf ${container_q_folder}

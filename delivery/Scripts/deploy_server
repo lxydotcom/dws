@@ -1,0 +1,26 @@
+#!/bin/bash
+
+cd `dirname $0`
+
+# arguments
+# $1: product_name
+# $2: product_version
+# $3: branch
+# $4: server_type
+# $5: db_type
+# $6: build_num
+
+# setup the whole deploy env
+_projects_path="../artifacts/projects"
+. ${_projects_path}/setup_deploy_env.sh "$@"
+
+# deploy server
+echo "*** DEPLOY SERVER ... ***"
+
+func_build && func_install && func_config && func_test
+_status=$?
+
+echo "*** DEPLOY SERVER DONE ***"
+
+# return status to docker host
+exit ${_status}

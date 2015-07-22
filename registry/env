@@ -1,0 +1,8 @@
+#!/bin/sh
+
+export HOST_MOUNT_DIR='/var/lib/boot2docker/dws/'
+export HOST_REGISTRY_DIR='${HOST_MOUNT_DIR}storage/registry'
+export CONTAINER_MOUNT_DIR='/dws/'
+export CONTAINER_REGISTRY_DIR='${CONTAINER_MOUNT_DIR}storage/registry'
+export FRONTEND_IMAGE='konradkleine/docker-registry-frontend'
+export REGISTRY_IMAGE='registry'

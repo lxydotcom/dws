@@ -1,0 +1,55 @@
+#!/bin/sh
+
+# Params: DOCKER_REGISTRY_IMAGES
+update_images() {
+
+    for image in ${1}
+    do
+        echo "Updating image ${image} ..."
+        docker pull ${image}
+        echo "[Done] Update Image ${image}"
+    done
+}
+
+
+# Params: HOST_REGISTRY_DIR MOUNT_REGISTRY_DIR FRONTEND_IMAGE REGISTRY_IMAGE SWARM_IMAGE SWARM_NODES
+gen_compose_file() {
+	host_mount_dir=${1}
+  container_mount_dir=${2}
+  container_registry_dir=${3}
+	frontend_image=${4}
+	registry_image=${5}
+    cat <<EOF
+frontend:
+    image: ${frontend_image}
+    links:
+      - registry
+    ports:
+      - "5080:80"
+    environment:
+      - ENV_DOCKER_REGISTRY_HOST=registry
+      - ENV_DOCKER_REGISTRY_PORT=5000
+      - ENV_MODE_BROWSE_ONLY=true
+registry:
+    image: ${registry_image}
+    ports:
+      - "5000:5000"
+    volumes:
+      - ${host_mount_dir}:${container_mount_dir}
+    environment:
+      - SEARCH_BACKEND=sqlalchemy
+      - STORAGE_PATH=${container_registry_dir}
+EOF
+}
+
+# Params: PROJECT_NAME, COMPOSE_FILE
+up_compose() {
+    if [ -e ${2} ]; then
+        echo docker-compose -p ${1} -f ${2}
+        ../tools/docker-compose -p ${1} -f ${2} up -d
+        [ $? -eq 0 ] || exit 1
+    else
+        echo "File ${2} not found."
+        exit 1
+    fi
+}
